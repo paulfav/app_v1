@@ -4,14 +4,19 @@ import base64
 import numpy as np
 import cv2
 import mediapipe as mp
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from flask_socketio import SocketIO, emit
 import logging
 import socket
 import traceback
 import time
 import eventlet
+import torch
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from flask_socketio import SocketIO, emit
+
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from gtts import gTTS
 
 # Patch eventlet for better socket performance
 eventlet.monkey_patch()
@@ -35,6 +40,19 @@ logger.info("="*50)
 app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+
+# Load the DistilGPT-2 model and tokenizer
+print("Loading DistilGPT-2 model and tokenizer. This may take a moment...")
+tokenizer = AutoTokenizer.from_pretrained("distilgpt2")
+model = AutoModelForCausalLM.from_pretrained("distilgpt2")
+print("Model loaded.")
+
+# Define prompt templates for different posture cases
+PROMPT_MAP = {
+    "lower": "Give a one-liner feedback to a user performing a plank exercise with hips too low, instructing them to raise their hips for proper alignment.",
+    "raise": "Give a one-liner feedback to a user performing a plank exercise with hips too high, instructing them to lower their hips for proper alignment.",
+    "good": "Give a one-liner motivational feedback to a user performing a plank exercise with good posture."
+}
 
 # Initialize MediaPipe Pose
 logger.info("Initializing MediaPipe Pose")
@@ -104,6 +122,42 @@ def calculate_angle(a, b, c):
     cosine_angle = dot / (norm_ba * norm_bc)
     cosine_angle = max(-1, min(1, cosine_angle))
     return math.degrees(math.acos(cosine_angle))
+
+def choose_prompt_key(angle):
+    lower_threshold = 160
+    upper_threshold = 200
+    if angle < lower_threshold:
+        return "lower"
+    elif angle > upper_threshold:
+        return "raise"
+    else:
+        return "good"
+
+def generate_one_liner_feedback(angle):
+    # Choose the appropriate prompt based on the angle
+    prompt_key = choose_prompt_key(angle)
+    prompt = PROMPT_MAP[prompt_key]
+    
+    # Encode the prompt and generate a one-liner output using the LLM
+    input_ids = tokenizer.encode(prompt, return_tensors="pt")
+    # Use a short max_length for a one-liner (adjust if needed)
+    output_ids = model.generate(input_ids, max_length=30, do_sample=True, temperature=0.8)
+    one_liner = tokenizer.decode(output_ids[0], skip_special_tokens=True)
+    return one_liner
+
+
+def generate_tts(feedback_text):
+    # Use gTTS to generate speech from the feedback text
+    tts = gTTS(text=feedback_text, lang='en')
+    filename = f"feedback_{int(time.time())}.mp3"
+    tts.save(filename)
+    # Read the audio file and encode it as a base64 string
+    with open(filename, "rb") as audio_file:
+        audio_base64 = base64.b64encode(audio_file.read()).decode("utf-8")
+    # Remove the temporary file
+    os.remove(filename)
+    return audio_base64
+
 
 # Socket.IO event handlers
 @socketio.on('connect')
@@ -228,8 +282,8 @@ def process_frame(frame_data):
         angle = calculate_angle(a, b, c)
         logger.debug(f"Calculated angle: {angle}")
         
-        # Check if posture is correct (angle between 160 and 200 degrees)
-        posture_correct = 160 <= angle <= 200
+        # # Check if posture is correct (angle between 160 and 200 degrees)
+        # posture_correct = 160 <= angle <= 200
         
         # Extract all landmarks for visualization
         landmarks_list = []
@@ -244,14 +298,34 @@ def process_frame(frame_data):
         
         logger.debug(f"Extracted {len(landmarks_list)} landmarks")
         
+        # response = {
+        #     "posture_correct": posture_correct,
+        #     "angle": int(angle),
+        #     "message": "Good posture!" if posture_correct else "Adjust your position!",
+        #     "landmarks": landmarks_list
+        # }
+
+        # Determine a simple evaluation using our rule-based function (optional, for debugging)
+        evaluation = choose_prompt_key(angle)
+        # Generate detailed one-liner feedback using our new pipeline
+        feedback_text = generate_one_liner_feedback(angle)
+        # Convert the feedback to speech (TTS) and encode it as base64
+        audio_feedback = generate_tts(feedback_text)
+
+        # Optionally, define posture_correct based on our evaluation (for now, we can consider "good" as correct)
+        posture_correct = (evaluation == "good")
+
         response = {
             "posture_correct": posture_correct,
             "angle": int(angle),
-            "message": "Good posture!" if posture_correct else "Adjust your position!",
+            "evaluation": evaluation,         # The simple rule-based evaluation (e.g., "lower", "raise", "good")
+            "message": feedback_text,           # The one-liner detailed feedback from the LLM
+            "audio_feedback": audio_feedback,   # Base64-encoded audio feedback
             "landmarks": landmarks_list
         }
-        
+            
         return response
+
         
     except Exception as e:
         logger.error(f"Error processing frame: {str(e)}")
@@ -261,6 +335,7 @@ def process_frame(frame_data):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     host = os.environ.get('FLASK_RUN_HOST', '0.0.0.0')
+    # host = "192.168.1.76"
     
     # Get the local IP address for client connections
     local_ip = get_local_ip()
