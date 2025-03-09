@@ -6,6 +6,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 
 // Configuration du serveur
 const SERVER_URL = 'http://192.168.1.160:5001';
+console.log(`Attempting to connect to server at: ${SERVER_URL}`);
 
 export default function HomeScreen() {
   // State variables
@@ -88,22 +89,52 @@ export default function HomeScreen() {
     // Lock screen orientation to landscape
     await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
     
-    // Connect to the server
-    socketRef.current = SocketIO.io(SERVER_URL);
+    // Connect to the server with detailed logging
+    console.log(`Initializing socket connection to ${SERVER_URL}`);
     
-    // Socket event handlers
+    // Add socket options for better debugging
+    const socketOptions = {
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      timeout: 20000,
+      forceNew: true
+    };
+    
+    socketRef.current = SocketIO.io(SERVER_URL, socketOptions);
+    
+    // Socket event handlers with enhanced logging
     socketRef.current.on('connect', () => {
+      console.log('Socket connected successfully!');
       setFeedback('Connected! Starting workout analysis...');
       
       // Start sending frames
       startSendingFrames();
     });
     
-    socketRef.current.on('disconnect', () => {
-      setFeedback('Disconnected from server');
+    socketRef.current.on('disconnect', (reason) => {
+      console.log(`Socket disconnected. Reason: ${reason}`);
+      setFeedback(`Disconnected from server: ${reason}`);
+    });
+    
+    socketRef.current.on('connect_error', (error) => {
+      console.error('Connection error:', error.message);
+      setFeedback(`Error connecting to server: ${error.message}`);
+    });
+    
+    socketRef.current.on('error', (error) => {
+      console.error('Socket error:', error);
+      setFeedback(`Socket error: ${error}`);
+    });
+    
+    socketRef.current.on('reconnect_attempt', (attemptNumber) => {
+      console.log(`Attempting to reconnect: attempt ${attemptNumber}`);
+      setFeedback(`Reconnecting... (attempt ${attemptNumber})`);
     });
     
     socketRef.current.on('pose_analysis', (data) => {
+      console.log('Received pose analysis data:', JSON.stringify(data));
       setAngle(data.angle);
       setIsGoodPosture(data.posture_correct);
       setFeedback(data.message);
@@ -118,11 +149,6 @@ export default function HomeScreen() {
         // Clear landmarks to ensure UI updates
         setLandmarks([]);
       }
-    });
-    
-    socketRef.current.on('connect_error', (error) => {
-      console.error('Connection error:', error);
-      setFeedback('Error connecting to server. Please try again.');
     });
   };
   

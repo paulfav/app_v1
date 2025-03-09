@@ -10,6 +10,11 @@ from flask_socketio import SocketIO, emit
 import logging
 import socket
 import traceback
+import time
+import eventlet
+
+# Patch eventlet for better socket performance
+eventlet.monkey_patch()
 
 # Configure logging
 logging.basicConfig(
@@ -22,16 +27,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Print startup message
+logger.info("="*50)
+logger.info("Starting Workout Analysis Server")
+logger.info("="*50)
+
 app = Flask(__name__)
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 # Initialize MediaPipe Pose
+logger.info("Initializing MediaPipe Pose")
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose(
     min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
+    min_tracking_confidence=0.5,
+    model_complexity=1  # Use a more accurate model
 )
+
+# Print local IP for connection
+local_ip = socket.gethostbyname(socket.gethostname())
+logger.info(f"Server running on http://{local_ip}:5001")
 
 # Helper: Get local IP address
 def get_local_ip():
@@ -58,7 +74,45 @@ def calculate_angle(a, b, c):
     cosine_angle = max(-1, min(1, cosine_angle))
     return math.degrees(math.acos(cosine_angle))
 
-# Process frame and analyze pose
+# Socket.IO event handlers
+@socketio.on('connect')
+def handle_connect():
+    logger.info(f'Client connected: {request.sid}')
+    emit('server_info', {'message': 'Connected to workout analysis server'})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    logger.info(f'Client disconnected: {request.sid}')
+
+@socketio.on('frame')
+def handle_frame(frame_data):
+    logger.debug(f"Received frame from client: {request.sid}")
+    start_time = time.time()
+    
+    # Process the frame
+    result = process_frame(frame_data)
+    
+    # Log processing time and result summary
+    processing_time = time.time() - start_time
+    logger.info(f"Frame processed in {processing_time:.2f}s: angle={result.get('angle')}, posture_correct={result.get('posture_correct')}, landmarks_count={len(result.get('landmarks', []))}")
+    
+    # Send result back to client
+    emit('pose_analysis', result)
+
+# HTTP routes
+@app.route('/')
+def index():
+    return "Workout Pose Analysis Server"
+
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    if 'image' not in request.json:
+        return jsonify({"error": "No image data provided"}), 400
+    
+    frame_data = request.json['image']
+    result = process_frame(frame_data)
+    return jsonify(result)
+
 def process_frame(frame_data):
     response = {
         "posture_correct": False,
@@ -83,6 +137,7 @@ def process_frame(frame_data):
             logger.debug(f"Image decoded successfully. Shape: {frame.shape}")
         except Exception as e:
             logger.error(f"Error decoding image: {str(e)}")
+            logger.error(traceback.format_exc())
             return response
         
         # Convert to RGB for MediaPipe
@@ -146,43 +201,9 @@ def process_frame(frame_data):
         logger.error(traceback.format_exc())
         return response
 
-# Socket.IO event handlers
-@socketio.on('connect')
-def handle_connect():
-    logger.info('Client connected')
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    logger.info('Client disconnected')
-
-@socketio.on('frame')
-def handle_frame(frame_data):
-    logger.debug("Received frame from client")
-    result = process_frame(frame_data)
-    logger.info(f"Sending analysis result: angle={result.get('angle')}, posture_correct={result.get('posture_correct')}, landmarks_count={len(result.get('landmarks', []))}")
-    emit('pose_analysis', result)
-
-# HTTP routes
-@app.route('/')
-def index():
-    return "Workout Pose Analysis Server"
-
-@app.route('/analyze', methods=['POST'])
-def analyze():
-    if 'image' not in request.json:
-        return jsonify({"error": "No image data provided"}), 400
-    
-    frame_data = request.json['image']
-    result = process_frame(frame_data)
-    return jsonify(result)
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     host = os.environ.get('FLASK_RUN_HOST', '0.0.0.0')
-    local_ip = get_local_ip()
     
     logger.info(f"Starting server on {host}:{port}")
-    logger.info(f"Server accessible at: http://{local_ip}:{port}")
-    logger.info(f"Use this URL in your mobile app: http://{local_ip}:{port}")
-    
-    socketio.run(app, host=host, port=port, debug=True) 
+    socketio.run(app, host=host, port=port, debug=True, use_reloader=False) 
