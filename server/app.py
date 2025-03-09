@@ -9,9 +9,17 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 import logging
 import socket
+import traceback
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('app.log')
+    ]
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -52,73 +60,91 @@ def calculate_angle(a, b, c):
 
 # Process frame and analyze pose
 def process_frame(frame_data):
+    response = {
+        "posture_correct": False,
+        "angle": None,
+        "message": "No pose detected",
+        "landmarks": []
+    }
+    
     try:
+        logger.debug("Starting to process frame")
+        
         # Decode base64 image
-        img_bytes = base64.b64decode(frame_data.split(',')[1])
-        img_np = np.frombuffer(img_bytes, dtype=np.uint8)
-        frame = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
+        try:
+            img_bytes = base64.b64decode(frame_data.split(',')[1])
+            img_np = np.frombuffer(img_bytes, dtype=np.uint8)
+            frame = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
+            
+            if frame is None:
+                logger.error("Failed to decode image")
+                return response
+                
+            logger.debug(f"Image decoded successfully. Shape: {frame.shape}")
+        except Exception as e:
+            logger.error(f"Error decoding image: {str(e)}")
+            return response
         
         # Convert to RGB for MediaPipe
         image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
         # Process the image with MediaPipe Pose
+        logger.debug("Processing image with MediaPipe")
         results = pose.process(image_rgb)
         
-        # Initialize response
+        if not results.pose_landmarks:
+            logger.warning("No pose landmarks detected in the frame")
+            return response
+            
+        logger.debug(f"Pose landmarks detected: {len(results.pose_landmarks.landmark)}")
+        
+        # Get landmarks for posture analysis
+        landmarks = results.pose_landmarks.landmark
+        
+        # Use left ear, shoulder, and hip to compute the back angle
+        left_ear = landmarks[mp_pose.PoseLandmark.LEFT_EAR.value]
+        left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
+        left_hip = landmarks[mp_pose.PoseLandmark.LEFT_HIP.value]
+        
+        # Convert normalized coordinates to pixel coordinates
+        h, w, _ = frame.shape
+        a = (left_ear.x * w, left_ear.y * h)
+        b = (left_shoulder.x * w, left_shoulder.y * h)
+        c = (left_hip.x * w, left_hip.y * h)
+        
+        # Calculate angle
+        angle = calculate_angle(a, b, c)
+        logger.debug(f"Calculated angle: {angle}")
+        
+        # Check if posture is correct (angle between 160 and 200 degrees)
+        posture_correct = 160 <= angle <= 200
+        
+        # Extract all landmarks for visualization
+        landmarks_list = []
+        for idx, landmark in enumerate(landmarks):
+            landmarks_list.append({
+                "x": landmark.x,
+                "y": landmark.y,
+                "z": landmark.z,
+                "visibility": landmark.visibility,
+                "name": idx  # Add landmark index/name for debugging
+            })
+        
+        logger.debug(f"Extracted {len(landmarks_list)} landmarks")
+        
         response = {
-            "posture_correct": False,
-            "angle": None,
-            "message": "No pose detected",
-            "landmarks": []
+            "posture_correct": posture_correct,
+            "angle": int(angle),
+            "message": "Good posture!" if posture_correct else "Adjust your position!",
+            "landmarks": landmarks_list
         }
         
-        if results.pose_landmarks:
-            h, w, _ = frame.shape
-            
-            # Get landmarks for posture analysis
-            landmarks = results.pose_landmarks.landmark
-            
-            # Use left ear, shoulder, and hip to compute the back angle
-            left_ear = landmarks[mp_pose.PoseLandmark.LEFT_EAR.value]
-            left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
-            left_hip = landmarks[mp_pose.PoseLandmark.LEFT_HIP.value]
-            
-            # Convert normalized coordinates to pixel coordinates
-            a = (left_ear.x * w, left_ear.y * h)
-            b = (left_shoulder.x * w, left_shoulder.y * h)
-            c = (left_hip.x * w, left_hip.y * h)
-            
-            # Calculate angle
-            angle = calculate_angle(a, b, c)
-            
-            # Check if posture is correct (angle between 160 and 200 degrees)
-            posture_correct = 160 <= angle <= 200
-            
-            # Extract all landmarks for visualization
-            landmarks_list = []
-            for idx, landmark in enumerate(landmarks):
-                landmarks_list.append({
-                    "x": landmark.x,
-                    "y": landmark.y,
-                    "z": landmark.z,
-                    "visibility": landmark.visibility,
-                    "name": idx  # Add landmark index/name for debugging
-                })
-            
-            logger.debug(f"Extracted {len(landmarks_list)} landmarks")
-            
-            response = {
-                "posture_correct": posture_correct,
-                "angle": int(angle),
-                "message": "Good posture!" if posture_correct else "Adjust your position!",
-                "landmarks": landmarks_list
-            }
-            
         return response
         
     except Exception as e:
         logger.error(f"Error processing frame: {str(e)}")
-        return {"error": str(e), "landmarks": []}
+        logger.error(traceback.format_exc())
+        return response
 
 # Socket.IO event handlers
 @socketio.on('connect')
@@ -131,6 +157,7 @@ def handle_disconnect():
 
 @socketio.on('frame')
 def handle_frame(frame_data):
+    logger.debug("Received frame from client")
     result = process_frame(frame_data)
     logger.info(f"Sending analysis result: angle={result.get('angle')}, posture_correct={result.get('posture_correct')}, landmarks_count={len(result.get('landmarks', []))}")
     emit('pose_analysis', result)

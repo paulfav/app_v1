@@ -109,11 +109,14 @@ export default function HomeScreen() {
       setFeedback(data.message);
       
       // Store landmarks if available
-      if (data.landmarks) {
+      if (data.landmarks && data.landmarks.length > 0) {
         console.log(`Received ${data.landmarks.length} landmarks from server`);
+        console.log(`First landmark: x=${data.landmarks[0].x}, y=${data.landmarks[0].y}, visibility=${data.landmarks[0].visibility}`);
         setLandmarks(data.landmarks);
       } else {
-        console.log("No landmarks received from server");
+        console.log("No landmarks received from server or empty landmarks array");
+        // Clear landmarks to ensure UI updates
+        setLandmarks([]);
       }
     });
     
@@ -162,43 +165,59 @@ export default function HomeScreen() {
   // Render landmarks on camera view
   const renderLandmarks = () => {
     if (!landmarks || landmarks.length === 0) {
-      console.log("No landmarks received or empty landmarks array");
+      console.log("No landmarks to render");
       return null;
     }
     
     console.log(`Rendering ${landmarks.length} landmarks`);
     
-    // Calculate scale factors based on camera container dimensions
+    // Get the dimensions of the camera container for proper scaling
     const containerWidth = screenDimensions.width * 0.9; // 90% of screen width
     const containerHeight = screenDimensions.height * 0.7; // 70% of screen height
     
-    return landmarks.map((point, index) => {
-      // Only render points with good visibility
-      if (point.visibility < 0.5) return null;
+    console.log(`Container dimensions: ${containerWidth}x${containerHeight}`);
+    
+    // Create an array to hold all landmark components
+    const landmarkComponents = [];
+    
+    // Process each landmark
+    for (let i = 0; i < landmarks.length; i++) {
+      const point = landmarks[i];
+      
+      // Skip points with low visibility
+      if (point.visibility < 0.5) {
+        console.log(`Skipping landmark ${i} due to low visibility: ${point.visibility}`);
+        continue;
+      }
       
       // Scale normalized coordinates to container size
       const x = point.x * containerWidth;
       const y = point.y * containerHeight;
       
-      return (
+      console.log(`Rendering landmark ${i} at position (${x}, ${y})`);
+      
+      // Add landmark component to array
+      landmarkComponents.push(
         <View
-          key={index}
-          style={[
-            styles.landmarkPoint,
-            {
-              left: x,
-              top: y,
-              backgroundColor: isGoodPosture ? '#4CAF50' : '#F44336',
-              // Make more visible
-              width: 10,
-              height: 10,
-              borderRadius: 5,
-              borderWidth: 2,
-            },
-          ]}
+          key={i}
+          style={{
+            position: 'absolute',
+            left: x,
+            top: y,
+            width: 12,
+            height: 12,
+            borderRadius: 6,
+            backgroundColor: isGoodPosture ? '#4CAF50' : '#F44336',
+            borderWidth: 2,
+            borderColor: '#FFFFFF',
+            zIndex: 1000,
+          }}
         />
       );
-    });
+    }
+    
+    // Return all landmark components
+    return landmarkComponents;
   };
 
   // Render based on camera permission
@@ -241,8 +260,10 @@ export default function HomeScreen() {
               active={sessionActive}
             />
             
-            {/* Landmarks overlay */}
-            {renderLandmarks()}
+            {/* Landmarks overlay - positioned absolutely over the camera */}
+            <View style={styles.landmarksContainer}>
+              {renderLandmarks()}
+            </View>
             
             {/* Timer overlay */}
             <View style={styles.timerOverlay}>
@@ -250,11 +271,12 @@ export default function HomeScreen() {
             </View>
             
             {/* Angle indicator */}
-            {angle !== null && (
-              <View style={[styles.angleIndicator, isGoodPosture ? styles.goodPosture : styles.badPosture]}>
-                <Text style={styles.angleText}>{angle}°</Text>
-              </View>
-            )}
+            <View style={[
+              styles.angleIndicator,
+              isGoodPosture ? styles.goodPosture : styles.badPosture
+            ]}>
+              <Text style={styles.angleText}>{angle || '--'}°</Text>
+            </View>
           </View>
           
           <Text style={styles.feedbackText}>{feedback}</Text>
@@ -314,12 +336,13 @@ const styles = StyleSheet.create({
   },
   landmarkPoint: {
     position: 'absolute',
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    borderWidth: 1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
     borderColor: 'white',
-    zIndex: 20,
+    backgroundColor: 'red',
+    zIndex: 1000,
   },
   timerOverlay: {
     position: 'absolute',
@@ -409,5 +432,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingBottom: 10,
     fontSize: 18,
+  },
+  landmarksContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
   },
 }); 
