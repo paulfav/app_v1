@@ -2,6 +2,8 @@
 
 Une application simple pour chronométrer vos séances d'entraînement avec un compte à rebours, une caméra frontale et un bouton d'arrêt.
 
+> **Note**: Cette version est sur la branche master.
+
 ## Fonctionnalités
 
 - Compte à rebours de 5 secondes avant le début de la séance
