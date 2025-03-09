@@ -1,0 +1,8 @@
+flask==2.3.3
+flask-cors==4.0.0
+opencv-python==4.8.0.76
+mediapipe==0.10.8
+numpy==1.25.2
+python-socketio==5.9.0
+flask-socketio==5.3.5
+eventlet==0.33.3

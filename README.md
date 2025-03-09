@@ -1,50 +1,63 @@
-# Welcome to your Expo app 👋
+# Workout App - Timer with Camera
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Une application simple pour chronométrer vos séances d'entraînement avec un compte à rebours, une caméra frontale et un bouton d'arrêt.
 
-## Get started
+## Fonctionnalités
 
-1. Install dependencies
+- Compte à rebours de 5 secondes avant le début de la séance
+- Caméra frontale activée pendant la séance
+- Minuteur pour suivre la durée de votre exercice
+- Bouton d'arrêt pour terminer manuellement la séance
 
-   ```bash
-   npm install
-   ```
+## Prérequis
 
-2. Start the app
+- Node.js et npm
+- Expo CLI
+- Un smartphone avec l'application Expo Go installée
 
-   ```bash
-    npx expo start
-   ```
+## Installation
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+### 1. Cloner le dépôt
 
 ```bash
-npm run reset-project
+git clone <url-du-repo>
+cd Workout
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### 2. Installer les dépendances
 
-## Learn more
+```bash
+npm install
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## Utilisation
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Démarrer l'application Expo :
 
-## Join the community
+```bash
+npx expo start
+```
 
-Join our community of developers creating universal apps.
+Scannez le QR code avec l'application Expo Go sur votre téléphone.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Utilisation de l'application
+
+1. Accordez les permissions d'accès à la caméra lorsque demandé
+2. Appuyez sur le bouton "Start" pour commencer
+3. Un compte à rebours de 5 secondes s'affichera
+4. Après le compte à rebours, la caméra s'activera et la séance d'entraînement commence
+5. L'application affichera un message indiquant que la séance est active
+6. Vous pouvez arrêter la séance à tout moment en appuyant sur le bouton "Stop"
+7. La séance se termine automatiquement après 10 secondes
+
+## Personnalisation
+
+Pour modifier la durée de la séance, modifiez la valeur dans le fichier `app/index.js` :
+
+```javascript
+// Changer 10000 (10 secondes) par la durée souhaitée en millisecondes
+sessionTimer = setTimeout(() => {
+  setSessionActive(false);
+  setFeedback('Session ended.');
+}, 10000);
+```
