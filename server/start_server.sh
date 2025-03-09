@@ -1,19 +1,23 @@
 #!/bin/bash
 
+# Initialiser Conda pour ce script
+eval "$(conda shell.bash hook)"
+
 # Déterminer le chemin de l'environnement Conda
-if [ -f ~/miniforge3/bin/activate ]; then
-    CONDA_PATH=~/miniforge3/bin/activate
-elif [ -f ~/miniconda3/bin/activate ]; then
-    CONDA_PATH=~/miniconda3/bin/activate
-elif [ -f ~/anaconda3/bin/activate ]; then
-    CONDA_PATH=~/anaconda3/bin/activate
+if conda env list | grep -q workout-env; then
+    echo "Environnement Conda 'workout-env' trouvé."
 else
-    echo "Conda non trouvé. Veuillez installer Conda ou modifier ce script."
-    exit 1
+    echo "Environnement Conda 'workout-env' non trouvé. Création de l'environnement..."
+    conda create -n workout-env python=3.10 -y
+    
+    echo "Installation des dépendances..."
+    conda activate workout-env
+    pip install -r requirements.txt
+    echo "Installation terminée."
 fi
 
 # Activer l'environnement Conda
-source $CONDA_PATH workout-env
+conda activate workout-env
 
 # Obtenir l'adresse IP locale
 IP_ADDRESS=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -n 1)

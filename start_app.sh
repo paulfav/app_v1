@@ -11,8 +11,10 @@ if lsof -i :5001 > /dev/null 2>&1; then
     echo "Vérifiez avec la commande: lsof -i :5001"
 else
     echo "Démarrage du serveur Flask..."
-    # Démarrer le serveur Flask en arrière-plan
-    (cd server && conda activate workout-env && python app.py) &
+    
+    # Démarrer le serveur Flask en arrière-plan en utilisant l'environnement Conda complet
+    (cd server && eval "$(conda shell.bash hook)" && conda activate workout-env && python app.py) &
+    
     # Attendre que le serveur démarre
     sleep 3
     echo "Serveur Flask démarré sur http://$(hostname -I | awk '{print $1}'):5001"
