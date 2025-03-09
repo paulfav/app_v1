@@ -110,7 +110,10 @@ export default function HomeScreen() {
       
       // Store landmarks if available
       if (data.landmarks) {
+        console.log(`Received ${data.landmarks.length} landmarks from server`);
         setLandmarks(data.landmarks);
+      } else {
+        console.log("No landmarks received from server");
       }
     });
     
@@ -158,13 +161,21 @@ export default function HomeScreen() {
 
   // Render landmarks on camera view
   const renderLandmarks = () => {
-    if (!landmarks) return null;
+    if (!landmarks || landmarks.length === 0) {
+      console.log("No landmarks received or empty landmarks array");
+      return null;
+    }
+    
+    console.log(`Rendering ${landmarks.length} landmarks`);
     
     // Calculate scale factors based on camera container dimensions
     const containerWidth = screenDimensions.width * 0.9; // 90% of screen width
     const containerHeight = screenDimensions.height * 0.7; // 70% of screen height
     
     return landmarks.map((point, index) => {
+      // Only render points with good visibility
+      if (point.visibility < 0.5) return null;
+      
       // Scale normalized coordinates to container size
       const x = point.x * containerWidth;
       const y = point.y * containerHeight;
@@ -178,6 +189,11 @@ export default function HomeScreen() {
               left: x,
               top: y,
               backgroundColor: isGoodPosture ? '#4CAF50' : '#F44336',
+              // Make more visible
+              width: 10,
+              height: 10,
+              borderRadius: 5,
+              borderWidth: 2,
             },
           ]}
         />

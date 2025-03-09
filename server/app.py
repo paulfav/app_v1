@@ -69,7 +69,7 @@ def process_frame(frame_data):
             "posture_correct": False,
             "angle": None,
             "message": "No pose detected",
-            "landmarks": None
+            "landmarks": []
         }
         
         if results.pose_landmarks:
@@ -94,43 +94,18 @@ def process_frame(frame_data):
             # Check if posture is correct (angle between 160 and 200 degrees)
             posture_correct = 160 <= angle <= 200
             
-            # Extract key landmarks for visualization
-            key_landmarks = [
-                # Head
-                landmarks[mp_pose.PoseLandmark.NOSE.value],
-                landmarks[mp_pose.PoseLandmark.LEFT_EYE.value],
-                landmarks[mp_pose.PoseLandmark.RIGHT_EYE.value],
-                landmarks[mp_pose.PoseLandmark.LEFT_EAR.value],
-                landmarks[mp_pose.PoseLandmark.RIGHT_EAR.value],
-                
-                # Shoulders
-                landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value],
-                landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value],
-                
-                # Elbows
-                landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value],
-                landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value],
-                
-                # Wrists
-                landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value],
-                landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value],
-                
-                # Hips
-                landmarks[mp_pose.PoseLandmark.LEFT_HIP.value],
-                landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value],
-                
-                # Knees
-                landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value],
-                landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value],
-                
-                # Ankles
-                landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value],
-                landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value],
-            ]
+            # Extract all landmarks for visualization
+            landmarks_list = []
+            for idx, landmark in enumerate(landmarks):
+                landmarks_list.append({
+                    "x": landmark.x,
+                    "y": landmark.y,
+                    "z": landmark.z,
+                    "visibility": landmark.visibility,
+                    "name": idx  # Add landmark index/name for debugging
+                })
             
-            # Convert landmarks to a list of dictionaries for JSON serialization
-            landmarks_list = [{"x": landmark.x, "y": landmark.y, "z": landmark.z, "visibility": landmark.visibility} 
-                             for landmark in key_landmarks]
+            logger.debug(f"Extracted {len(landmarks_list)} landmarks")
             
             response = {
                 "posture_correct": posture_correct,
@@ -143,7 +118,7 @@ def process_frame(frame_data):
         
     except Exception as e:
         logger.error(f"Error processing frame: {str(e)}")
-        return {"error": str(e)}
+        return {"error": str(e), "landmarks": []}
 
 # Socket.IO event handlers
 @socketio.on('connect')
@@ -157,6 +132,7 @@ def handle_disconnect():
 @socketio.on('frame')
 def handle_frame(frame_data):
     result = process_frame(frame_data)
+    logger.info(f"Sending analysis result: angle={result.get('angle')}, posture_correct={result.get('posture_correct')}, landmarks_count={len(result.get('landmarks', []))}")
     emit('pose_analysis', result)
 
 # HTTP routes
