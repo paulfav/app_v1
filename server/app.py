@@ -39,11 +39,39 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 # Initialize MediaPipe Pose
 logger.info("Initializing MediaPipe Pose")
 mp_pose = mp.solutions.pose
+mp_drawing = mp.solutions.drawing_utils  # For debugging visualization
+
+# Create pose instance with more permissive settings
 pose = mp_pose.Pose(
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5,
-    model_complexity=1  # Use a more accurate model
+    static_image_mode=False,  # Set to False for video processing
+    model_complexity=1,       # Use a more accurate model (0, 1, or 2)
+    smooth_landmarks=True,    # Enable landmark smoothing
+    enable_segmentation=False,
+    min_detection_confidence=0.3,  # Lower threshold to detect more poses
+    min_tracking_confidence=0.3    # Lower threshold for tracking
 )
+
+# Test MediaPipe with a simple image to verify it works
+def test_mediapipe():
+    try:
+        # Create a simple test image (just a black image with a white rectangle)
+        test_img = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.rectangle(test_img, (100, 100), (300, 400), (255, 255, 255), -1)
+        
+        # Process with MediaPipe
+        results = pose.process(test_img)
+        
+        if results.pose_landmarks:
+            logger.info("MediaPipe test successful: landmarks detected in test image")
+        else:
+            logger.warning("MediaPipe test: No landmarks detected in test image")
+            
+    except Exception as e:
+        logger.error(f"MediaPipe test failed: {str(e)}")
+        logger.error(traceback.format_exc())
+
+# Run the test
+test_mediapipe()
 
 # Helper: Get local IP address without using DNS resolution
 def get_local_ip():
@@ -90,6 +118,7 @@ def handle_disconnect():
 @socketio.on('frame')
 def handle_frame(frame_data):
     logger.debug(f"Received frame from client: {request.sid}")
+    logger.debug(f"Frame data length: {len(frame_data)}")
     start_time = time.time()
     
     # Process the frame
@@ -127,8 +156,14 @@ def process_frame(frame_data):
     try:
         logger.debug("Starting to process frame")
         
+        # Check if frame_data is valid
+        if not frame_data or not isinstance(frame_data, str) or not frame_data.startswith('data:image'):
+            logger.error(f"Invalid frame data format: {type(frame_data)}")
+            return response
+            
         # Decode base64 image
         try:
+            logger.debug("Decoding base64 image")
             img_bytes = base64.b64decode(frame_data.split(',')[1])
             img_np = np.frombuffer(img_bytes, dtype=np.uint8)
             frame = cv2.imdecode(img_np, cv2.IMREAD_COLOR)
@@ -138,6 +173,14 @@ def process_frame(frame_data):
                 return response
                 
             logger.debug(f"Image decoded successfully. Shape: {frame.shape}")
+            
+            # Save the original frame for debugging
+            debug_dir = "debug_frames"
+            os.makedirs(debug_dir, exist_ok=True)
+            timestamp = int(time.time() * 1000)
+            cv2.imwrite(f"{debug_dir}/original_{timestamp}.jpg", frame)
+            logger.debug(f"Saved original frame to {debug_dir}/original_{timestamp}.jpg")
+            
         except Exception as e:
             logger.error(f"Error decoding image: {str(e)}")
             logger.error(traceback.format_exc())
@@ -150,7 +193,18 @@ def process_frame(frame_data):
         logger.debug("Processing image with MediaPipe")
         results = pose.process(image_rgb)
         
-        if not results.pose_landmarks:
+        # Save the processed frame with landmarks for debugging
+        debug_frame = frame.copy()
+        if results.pose_landmarks:
+            mp_drawing.draw_landmarks(
+                debug_frame,
+                results.pose_landmarks,
+                mp_pose.POSE_CONNECTIONS
+            )
+            cv2.imwrite(f"{debug_dir}/landmarks_{timestamp}.jpg", debug_frame)
+            logger.debug(f"Saved frame with landmarks to {debug_dir}/landmarks_{timestamp}.jpg")
+        else:
+            cv2.imwrite(f"{debug_dir}/no_landmarks_{timestamp}.jpg", debug_frame)
             logger.warning("No pose landmarks detected in the frame")
             return response
             

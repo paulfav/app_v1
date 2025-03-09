@@ -201,17 +201,24 @@ export default function HomeScreen() {
     frameIntervalRef.current = setInterval(async () => {
       if (cameraRef.current && sessionActive && socketRef.current && socketRef.current.connected) {
         try {
+          console.log("Taking picture from camera...");
           const photo = await cameraRef.current.takePictureAsync({
             quality: 0.5,
             base64: true,
             exif: false,
           });
           
+          console.log(`Picture taken, base64 length: ${photo.base64.length}`);
+          
           // Send the frame to the server
+          console.log("Sending frame to server...");
           socketRef.current.emit('frame', `data:image/jpg;base64,${photo.base64}`);
+          console.log("Frame sent to server");
         } catch (error) {
           console.error('Error taking picture:', error);
         }
+      } else {
+        console.log(`Cannot take picture: camera=${!!cameraRef.current}, sessionActive=${sessionActive}, socket=${!!socketRef.current}, connected=${socketRef.current?.connected}`);
       }
     }, 200);
   };
@@ -312,6 +319,8 @@ export default function HomeScreen() {
               facing="front"
               enableTorch={false}
               active={sessionActive}
+              onCameraReady={() => console.log("Camera is ready")}
+              onMountError={(error) => console.error("Camera mount error:", error)}
             />
             
             {/* Landmarks overlay - positioned absolutely over the camera */}
