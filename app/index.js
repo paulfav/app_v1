@@ -6,7 +6,9 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 
 // Configuration du serveur
 const SERVER_URL = 'http://192.168.1.160:5001';
-console.log(`Attempting to connect to server at: ${SERVER_URL}`);
+const FALLBACK_URL = 'http://127.0.0.1:5001'; // Fallback to localhost if main server is unreachable
+console.log(`Primary server URL: ${SERVER_URL}`);
+console.log(`Fallback server URL: ${FALLBACK_URL}`);
 
 export default function HomeScreen() {
   // State variables
@@ -102,54 +104,80 @@ export default function HomeScreen() {
       forceNew: true
     };
     
+    // Try to connect to the primary server
     socketRef.current = SocketIO.io(SERVER_URL, socketOptions);
     
-    // Socket event handlers with enhanced logging
-    socketRef.current.on('connect', () => {
-      console.log('Socket connected successfully!');
-      setFeedback('Connected! Starting workout analysis...');
-      
-      // Start sending frames
-      startSendingFrames();
-    });
-    
-    socketRef.current.on('disconnect', (reason) => {
-      console.log(`Socket disconnected. Reason: ${reason}`);
-      setFeedback(`Disconnected from server: ${reason}`);
-    });
-    
-    socketRef.current.on('connect_error', (error) => {
-      console.error('Connection error:', error.message);
-      setFeedback(`Error connecting to server: ${error.message}`);
-    });
-    
-    socketRef.current.on('error', (error) => {
-      console.error('Socket error:', error);
-      setFeedback(`Socket error: ${error}`);
-    });
-    
-    socketRef.current.on('reconnect_attempt', (attemptNumber) => {
-      console.log(`Attempting to reconnect: attempt ${attemptNumber}`);
-      setFeedback(`Reconnecting... (attempt ${attemptNumber})`);
-    });
-    
-    socketRef.current.on('pose_analysis', (data) => {
-      console.log('Received pose analysis data:', JSON.stringify(data));
-      setAngle(data.angle);
-      setIsGoodPosture(data.posture_correct);
-      setFeedback(data.message);
-      
-      // Store landmarks if available
-      if (data.landmarks && data.landmarks.length > 0) {
-        console.log(`Received ${data.landmarks.length} landmarks from server`);
-        console.log(`First landmark: x=${data.landmarks[0].x}, y=${data.landmarks[0].y}, visibility=${data.landmarks[0].visibility}`);
-        setLandmarks(data.landmarks);
-      } else {
-        console.log("No landmarks received from server or empty landmarks array");
-        // Clear landmarks to ensure UI updates
-        setLandmarks([]);
+    // Set a timeout to try the fallback URL if primary connection fails
+    const connectionTimeout = setTimeout(() => {
+      if (!socketRef.current.connected) {
+        console.log(`Connection to ${SERVER_URL} failed. Trying fallback URL: ${FALLBACK_URL}`);
+        setFeedback('Primary server unreachable, trying fallback...');
+        
+        // Disconnect from the primary server
+        socketRef.current.disconnect();
+        
+        // Connect to the fallback server
+        socketRef.current = SocketIO.io(FALLBACK_URL, socketOptions);
+        
+        // Set up event handlers for the fallback connection
+        setupSocketEventHandlers();
       }
-    });
+    }, 5000); // Wait 5 seconds before trying fallback
+    
+    // Set up socket event handlers
+    setupSocketEventHandlers();
+    
+    // Function to set up event handlers
+    function setupSocketEventHandlers() {
+      socketRef.current.on('connect', () => {
+        // Clear the connection timeout if it's still active
+        clearTimeout(connectionTimeout);
+        
+        console.log('Socket connected successfully!');
+        setFeedback('Connected! Starting workout analysis...');
+        
+        // Start sending frames
+        startSendingFrames();
+      });
+      
+      socketRef.current.on('disconnect', (reason) => {
+        console.log(`Socket disconnected. Reason: ${reason}`);
+        setFeedback(`Disconnected from server: ${reason}`);
+      });
+      
+      socketRef.current.on('connect_error', (error) => {
+        console.error('Connection error:', error.message);
+        setFeedback(`Error connecting to server: ${error.message}`);
+      });
+      
+      socketRef.current.on('error', (error) => {
+        console.error('Socket error:', error);
+        setFeedback(`Socket error: ${error}`);
+      });
+      
+      socketRef.current.on('reconnect_attempt', (attemptNumber) => {
+        console.log(`Attempting to reconnect: attempt ${attemptNumber}`);
+        setFeedback(`Reconnecting... (attempt ${attemptNumber})`);
+      });
+      
+      socketRef.current.on('pose_analysis', (data) => {
+        console.log('Received pose analysis data:', JSON.stringify(data));
+        setAngle(data.angle);
+        setIsGoodPosture(data.posture_correct);
+        setFeedback(data.message);
+        
+        // Store landmarks if available
+        if (data.landmarks && data.landmarks.length > 0) {
+          console.log(`Received ${data.landmarks.length} landmarks from server`);
+          console.log(`First landmark: x=${data.landmarks[0].x}, y=${data.landmarks[0].y}, visibility=${data.landmarks[0].visibility}`);
+          setLandmarks(data.landmarks);
+        } else {
+          console.log("No landmarks received from server or empty landmarks array");
+          // Clear landmarks to ensure UI updates
+          setLandmarks([]);
+        }
+      });
+    }
   };
   
   // Start sending camera frames to the server

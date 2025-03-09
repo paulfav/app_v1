@@ -45,23 +45,26 @@ pose = mp_pose.Pose(
     model_complexity=1  # Use a more accurate model
 )
 
-# Print local IP for connection
-local_ip = socket.gethostbyname(socket.gethostname())
-logger.info(f"Server running on http://{local_ip}:5001")
-
-# Helper: Get local IP address
+# Helper: Get local IP address without using DNS resolution
 def get_local_ip():
     try:
-        # Create a socket connection to determine the local IP
+        # Create a socket connection to an external server
+        # This doesn't actually establish a connection
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
+        # Doesn't even have to be reachable
+        s.connect(('10.255.255.255', 1))
+        IP = s.getsockname()[0]
         s.close()
-        return ip
+        return IP
     except Exception:
-        return "127.0.0.1"
+        logger.error("Failed to get local IP address")
+        return '127.0.0.1'
 
-# Helper: Compute an angle between three points (in degrees)
+# Get and log the local IP
+local_ip = get_local_ip()
+logger.info(f"Server running on http://{local_ip}:5001")
+
+# Helper: Calculate angle between three points
 def calculate_angle(a, b, c):
     ba = (a[0] - b[0], a[1] - b[1])
     bc = (c[0] - b[0], c[1] - b[1])
@@ -205,5 +208,16 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     host = os.environ.get('FLASK_RUN_HOST', '0.0.0.0')
     
+    # Get the local IP address for client connections
+    local_ip = get_local_ip()
+    
     logger.info(f"Starting server on {host}:{port}")
-    socketio.run(app, host=host, port=port, debug=True, use_reloader=False) 
+    logger.info(f"Server accessible at: http://{local_ip}:{port}")
+    logger.info(f"Use this URL in your mobile app: http://{local_ip}:{port}")
+    
+    # Run the server
+    try:
+        socketio.run(app, host=host, port=port, debug=True, use_reloader=False)
+    except Exception as e:
+        logger.error(f"Error starting server: {str(e)}")
+        logger.error(traceback.format_exc()) 
