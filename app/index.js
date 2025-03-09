@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, Pressable, StyleSheet, Button } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Button, Dimensions } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as SocketIO from 'socket.io-client';
+import * as ScreenOrientation from 'expo-screen-orientation';
 
 // Configuration du serveur
 const SERVER_URL = 'http://192.168.1.160:5001';
@@ -14,6 +15,8 @@ export default function HomeScreen() {
   const [sessionTime, setSessionTime] = useState(30); // session time in seconds
   const [angle, setAngle] = useState(null); // posture angle
   const [isGoodPosture, setIsGoodPosture] = useState(false); // posture status
+  const [landmarks, setLandmarks] = useState(null); // pose landmarks
+  const [screenDimensions, setScreenDimensions] = useState(Dimensions.get('window')); // screen dimensions
   
   // Camera permissions
   const [permission, requestPermission] = useCameraPermissions();
@@ -23,16 +26,28 @@ export default function HomeScreen() {
   const socketRef = useRef(null);
   const frameIntervalRef = useRef(null);
 
+  // Handle screen dimensions changes
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setScreenDimensions(window);
+    });
+    return () => subscription?.remove();
+  }, []);
+
   // Start the countdown when the Start button is pressed
   const startCountdown = () => {
     setCountdown(5); // a 5-second countdown before the session starts
   };
 
   // Stop the session when the Stop button is pressed
-  const stopSession = () => {
+  const stopSession = async () => {
     setSessionActive(false);
     setFeedback('Session stopped manually.');
     setSessionTime(30); // Reset session time
+    setLandmarks(null); // Clear landmarks
+    
+    // Reset screen orientation to portrait
+    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     
     // Disconnect socket
     if (socketRef.current) {
@@ -66,9 +81,12 @@ export default function HomeScreen() {
   }, [countdown]);
 
   // Start the session and connect to the server
-  const startSession = () => {
+  const startSession = async () => {
     setSessionActive(true);
     setFeedback('Connecting to server...');
+    
+    // Lock screen orientation to landscape
+    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
     
     // Connect to the server
     socketRef.current = SocketIO.io(SERVER_URL);
@@ -89,6 +107,11 @@ export default function HomeScreen() {
       setAngle(data.angle);
       setIsGoodPosture(data.posture_correct);
       setFeedback(data.message);
+      
+      // Store landmarks if available
+      if (data.landmarks) {
+        setLandmarks(data.landmarks);
+      }
     });
     
     socketRef.current.on('connect_error', (error) => {
@@ -133,6 +156,35 @@ export default function HomeScreen() {
     }, 200);
   };
 
+  // Render landmarks on camera view
+  const renderLandmarks = () => {
+    if (!landmarks) return null;
+    
+    // Calculate scale factors based on camera container dimensions
+    const containerWidth = screenDimensions.width * 0.9; // 90% of screen width
+    const containerHeight = screenDimensions.height * 0.7; // 70% of screen height
+    
+    return landmarks.map((point, index) => {
+      // Scale normalized coordinates to container size
+      const x = point.x * containerWidth;
+      const y = point.y * containerHeight;
+      
+      return (
+        <View
+          key={index}
+          style={[
+            styles.landmarkPoint,
+            {
+              left: x,
+              top: y,
+              backgroundColor: isGoodPosture ? '#4CAF50' : '#F44336',
+            },
+          ]}
+        />
+      );
+    });
+  };
+
   // Render based on camera permission
   if (!permission) {
     return <View style={styles.container}><Text>Requesting camera permission...</Text></View>;
@@ -172,6 +224,9 @@ export default function HomeScreen() {
               enableTorch={false}
               active={sessionActive}
             />
+            
+            {/* Landmarks overlay */}
+            {renderLandmarks()}
             
             {/* Timer overlay */}
             <View style={styles.timerOverlay}>
@@ -228,18 +283,27 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'flex-start',
-    paddingTop: 50,
+    paddingTop: 20,
   },
   cameraContainer: {
     width: '90%',
-    height: 400,
+    height: '70%',
     borderRadius: 20,
     overflow: 'hidden',
-    marginBottom: 20,
+    marginBottom: 10,
     position: 'relative',
   },
   camera: {
     flex: 1,
+  },
+  landmarkPoint: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'white',
+    zIndex: 20,
   },
   timerOverlay: {
     position: 'absolute',
@@ -280,7 +344,7 @@ const styles = StyleSheet.create({
   },
   progressContainer: {
     width: '90%',
-    marginBottom: 20,
+    marginBottom: 10,
   },
   progressBackground: {
     height: 10,
@@ -307,7 +371,7 @@ const styles = StyleSheet.create({
   },
   stopButton: {
     backgroundColor: '#F44336',
-    marginTop: 20,
+    marginTop: 10,
   },
   buttonText: {
     color: '#fff',
@@ -321,7 +385,7 @@ const styles = StyleSheet.create({
   },
   feedbackText: {
     fontSize: 24,
-    marginTop: 20,
+    marginTop: 10,
     textAlign: 'center',
     paddingHorizontal: 20,
   },

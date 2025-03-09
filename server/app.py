@@ -68,7 +68,8 @@ def process_frame(frame_data):
         response = {
             "posture_correct": False,
             "angle": None,
-            "message": "No pose detected"
+            "message": "No pose detected",
+            "landmarks": None
         }
         
         if results.pose_landmarks:
@@ -93,10 +94,49 @@ def process_frame(frame_data):
             # Check if posture is correct (angle between 160 and 200 degrees)
             posture_correct = 160 <= angle <= 200
             
+            # Extract key landmarks for visualization
+            key_landmarks = [
+                # Head
+                landmarks[mp_pose.PoseLandmark.NOSE.value],
+                landmarks[mp_pose.PoseLandmark.LEFT_EYE.value],
+                landmarks[mp_pose.PoseLandmark.RIGHT_EYE.value],
+                landmarks[mp_pose.PoseLandmark.LEFT_EAR.value],
+                landmarks[mp_pose.PoseLandmark.RIGHT_EAR.value],
+                
+                # Shoulders
+                landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value],
+                landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value],
+                
+                # Elbows
+                landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value],
+                landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value],
+                
+                # Wrists
+                landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value],
+                landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value],
+                
+                # Hips
+                landmarks[mp_pose.PoseLandmark.LEFT_HIP.value],
+                landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value],
+                
+                # Knees
+                landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value],
+                landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value],
+                
+                # Ankles
+                landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value],
+                landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value],
+            ]
+            
+            # Convert landmarks to a list of dictionaries for JSON serialization
+            landmarks_list = [{"x": landmark.x, "y": landmark.y, "z": landmark.z, "visibility": landmark.visibility} 
+                             for landmark in key_landmarks]
+            
             response = {
                 "posture_correct": posture_correct,
                 "angle": int(angle),
-                "message": "Good posture!" if posture_correct else "Adjust your position!"
+                "message": "Good posture!" if posture_correct else "Adjust your position!",
+                "landmarks": landmarks_list
             }
             
         return response
